@@ -1,0 +1,239 @@
+---
+---
+title: "Assigment_Template"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-12-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Assignment - Penguin Project
+
+```{r Loading things}
+#| results: hide
+#| echo: false
+#General loading of packages
+library(ggplot2)
+library(here)
+library(dplyr)
+library(janitor)
+library(ggpubr)
+library(palmerpenguins)
+library(svglite)
+library(gridExtra)
+```
+
+## QUESTION 01: Data Visualisation for Science Communication
+
+### a) Misleading Plot
+
+```{r bad figure code, echo=FALSE}
+#| message: false
+#| warning: false
+#Bad plot
+ggplot(penguins, aes(x= bill_depth_mm, y=flipper_length_mm)) + geom_point((aes(color=species)))+
+  geom_smooth(method=lm, color="darkred")+
+  scale_color_manual(values=c("darkred", "darkgreen","#b00"))+
+  xlim(18,21)+ 
+  ylim(170,220)+
+  theme(legend.position = "none")
+
+#Colour issue (colourblind unfriendly), there
+#Misleadingly subset or not subset to obscure a correlation,
+#Axes and scale would have been altered to mislead
+#creative extra visual element to mislead.
+#ADD REFERENCES
+```
+
+### b) How your design choices mislead the reader about the underlying data (200-300 words).
+
+I have plotted Culmen Depth (mm) on the x-axis and Flipper Length (mm) on the y-axis. I have led to reader to infer that culmen depth and flipper length are positively correlated which is correct. However, I have mislead the reader to infer that the morphospace for culmen depth and flipper length is the same for all species. In this figure, the raw data points can only be seen for Adelie and Chinstrap penguins which have similar ranges for culmen depth and flipper length. I have obscured the Gentoo data points by shortening the x-axis to be between 18 to 21mm. This leaves out the raw data points before the 18mm axis that shows that Gentoo penguins have smaller culmen depths but larger flipper lengths than Adelie and Chinstrap penguins. If the x-axis was longer, there would be two different clusters of data points (one for Gentoo, one for Adelie and Chinstrap together). I also removed the legend, making it difficult to determine how the data differs between different species. This makes the graph not reproducible as the reader does not know how the data was grouped to form the graph. The colour scheme chosen is also not colour blind friendly which is poor practice and means the plot could show no species differentiation if the reader cannot distinguish red and green.
+
+------------------------------------------------------------------------
+
+## QUESTION 2: Data Pipeline
+
+### Introduction
+
+The PalmerPenguins package contains data collected on the Palmer archipelago in Antarctica on three species of penguins (Gintoo, Adelie and Chinstrap) *(Horst, Hill and Gorman, 2020)*. Fourteen other variables for the three species where measured and notes (e.g. culmen length, culmen depth, flipper length, body mass, sex).
+
+```{r Data Exploration}
+#| results: hide
+#----------------------------------Load Data----------------------------------
+#Penguin data has comes from the PalmerPenguins package
+
+#Where to find the data
+here::here()
+
+#Loading the raw data
+penguins_raw <- read.csv(here("data", "penguins_raw.csv"))
+
+#Exploring the data shows that we have 18 variables but the column names are variables and still include unhelpful information like "Comments"
+print("Data has 18 columns but are not yet uniformly named")
+head(penguins_raw)
+
+#----------------------------------Clean Data---------------------------------
+
+#The data is cleaned to remove unhelpful columns and to rename the columns consistently
+#To do this I need to source the functions file for cleaning functions I made
+source(here("functions","Cleaning.R"))
+
+#Creating a cleaning function using functions from the functions script - Cleaning.r 
+cleaning_penguin_columns <- function(raw_data){
+  print("Cleaned names, removed comments, removed empty and cols, removed delta")
+  raw_data %>% 
+    clean_names() %>% 
+    shorten_species() %>% 
+    remove_empty(c("rows", "cols")) %>% 
+    select(-comments) %>% 
+    select(-starts_with("delta"))
+}
+
+#Applying function to raw data to create clean data
+penguins_clean <- cleaning_penguin_columns(penguins_raw)
+
+#-----------------------------------Check Clean Data--------------------------
+#Checking if column names have been cleaned up
+colnames(penguins_raw)
+colnames(penguins_clean)
+#Save the clean data into data file
+write.csv(penguins_clean, here("data", "penguins_clean.csv"))
+```
+
+### Hypothesis
+
+Speciation usually leads to divergence of morphological characteristics as species are adapated to different ecologies. Therefore, different species should occupy a distinct aspect of the morphospace.
+
+Therefore, the hypothesis tested will be: Is the culmen length distinct between the three species of penguins (Adelie, Chinstrap, Gintoo).
+
+### Statistical Methods
+
+Figure 1 is the explanatory figure for the raw data. From this we can see that species are clustered based on culmen length and culmen depth. You can see that the island the species was on shows no clustering, indicating species do have distinct morphological traits.
+
+```{r Explanatory Figure}
+#| message: false
+#| warning: false
+
+#Sourcing functions for plotting
+source(here("functions","Plotting.R"))
+
+#Using function to make scatterplot of culmen length by culmen depth split by categories of species and island
+culmen_explanatory <- scatter_culmen(penguins_clean)
+culmen_explanatory
+
+#Saving this plot into "figures" folder as a .png
+save.png(culmen_explanatory, filename ="Figure1_culmen_explanatory.png")
+save.svg(culmen_explanatory, filename ="Figure1_culmen_explanatory.svg")
+```
+
+A One-Way ANOVA is used to test whether there is a significant difference between the culmen length of different species. This is because culmen length is a continuous variable and species is a categorical variable.
+
+```{r One Way ANOVA}
+#| message: false
+#| warning: false
+
+#Linear model for showing differences in culmen length between species
+ANOVAlength <- lm(culmen_length_mm ~ species, data = penguins_clean)
+# One-Way Anova
+anova(ANOVAlength)
+
+#Tukey-Kramer Test which shows difference between means of all pairs of groups
+#aov = fit an analysis of variance model
+TukeyHSD(aov(ANOVAlength))
+#The bottom 3 rows of output:
+#diff = the difference between each of the means of the groups 
+#lwr and upr = lower and upper bounds of 95% CI 
+#p adj = P value for the test 
+#reject every null hypothesis bc p values are very low 
+
+#Comparisons of p values that are needed to display on boxplots
+my_comparisons <- list( c("Chinstrap", "Adelie"), c("Gentoo", "Adelie"), c("Gentoo", "Chinstrap"))
+```
+
+The data needs to be tested against the assumptions of an ANOVA to determine if this was an appropriate statistical test to use. Normality of data and homogeneity of variance are tested here.
+
+The results show the data is both normal and variance is equal between groups so the assumptions of ANOVA are met. The histogram and QQ Plots show normality of data as the histogram shows a normal distribution and QQ Plots show little deviation from the straight line. Residual plot shows homogeneity of variance because there does not seem to be a trend between residuals and fitted values around the 0 dashed line.
+
+```{r Assumptions}
+#| message: false
+#| warning: false
+#Sourcing functions for assumptions testing
+source(here("functions","Assumptions.R"))
+
+#Testing normality with a histogram
+plot1 <- histogram_length(penguins_clean)
+
+#Testing normality with a qqplot of all data and then split into species
+plot2 <- ggqqplot(residuals(ANOVAlength))
+plot3 <- ggqqplot(penguins_clean, "culmen_length_mm", facet.by = "species")
+
+grid.arrange(plot1, plot2, plot3, ncol = 2)
+
+#Residuals Plot testing homogenity of variance
+plot(ANOVAlength, 1)
+```
+
+### Results & Discussion
+
+Figure 2 shows that culmen length is significantly differ between the three different species, agreeing with the proposed hypothesis. This is shown as the p values for all pairwise comparisons are below 0.05. This is an expected result as different species have diverged morphologically from one another.
+
+Culmen length may be linked to feeding ecology as beaks are important for feeding. Adelie penguins may have smaller beaks as they feed mainly on krill, followed by Gentoo that feed on crustaceans. Chinstrap and Gentoo penguins have closer morphology in culmen length which may be due to the fact Chinstrap pengions also feed on crustaceans. Chinstrap penguins have slightly longer culmens because they use their beaks to reach difficult, higher spots for breeding *(British Antarctic Survey, Natural Environment Research Council, no date)*
+
+```{r Plotting Results}
+#| message: false
+#| warning: false
+
+#Boxplot function for culmen length grouped by species and these have been saved to the figures folder
+culmenlength_boxplot <- boxplot_culmenlength(penguins_clean)
+culmenlength_boxplot
+
+save.png(culmenlength_boxplot, filename ="Figure2_culmenlengthboxplot.png")
+save.svg(culmenlength_boxplot, filename ="Figure2_culmenlengthboxplot.svg")
+
+```
+
+### Conclusion
+
+In conclusion, species diverge to fit their unique feeding and breeding ecology and have significantly different beak morphologies.
+
+------------------------------------------------------------------------
+
+## QUESTION 3: Open Science
+
+### a) GitHub
+
+*Upload your RProject you created for **Question 2** and any files and subfolders used to GitHub. Do not include any identifiers such as your name. Make sure your GitHub repo is public.*
+
+*GitHub link:*
+
+*You will be marked on your repo organisation and readability.*
+
+### b) Share your repo with a partner, download, and try to run their data pipeline.
+
+*Partner's GitHub link:*
+
+*You **must** provide this so I can verify there is no plagiarism between you and your partner.*
+
+### c) Reflect on your experience running their code. (300-500 words)
+
+-   *What elements of your partner's code helped you to understand their data pipeline?*
+
+-   *Did it run? Did you need to fix anything?*
+
+-   *What suggestions would you make for improving their code to make it more understandable or reproducible, and why?*
+
+-   *If you needed to alter your partner's figure using their code, do you think that would be easy or difficult, and why?*
+
+### d) Reflect on your own code based on your experience with your partner's code and their review of yours. (300-500 words)
+
+-   *What improvements did they suggest, and do you agree?*
+
+-   *What did you learn about writing code for other people?*
+
+------------------------------------------------------------------------
+
+## References:
